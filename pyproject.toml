@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "freesound-crossmodal-search"
+version = "0.1.0"
+description = "Find sounds in Freesound with a text-to-audio retrieval system"
+authors = ["Benno Weck <benno.weck01@estudiant.upf.edu>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "crossmodal_alignment"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+torch = "^1.13.1"
+pytorch-metric-learning = "^1.6.3"
+pytorch-lightning = "^1.9.0"
+torchtext = "^0.14.1"
+
+
+[tool.poetry.group.dev.dependencies]
+black = "^22.10.0"
+tensorboard = "^2.11.2"
+jsonargparse = {extras = ["signatures"], version = "^4.19.0"}
+
+
+[tool.poetry.group.interface.dependencies]
+streamlit = "^1.18.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
