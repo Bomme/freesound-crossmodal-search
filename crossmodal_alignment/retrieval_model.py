@@ -180,6 +180,7 @@ class BiEncoder(pl.LightningModule):
             self.log(
                 metric, metrics_results[metric], sync_dist=pld.distributed_available()
             )
+        metric_collection.reset()
         return results
 
     def configure_optimizers(self):
