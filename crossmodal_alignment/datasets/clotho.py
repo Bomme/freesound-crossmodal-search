@@ -32,10 +32,14 @@ class ClothoEmbeddings(PairedModalitiesDataset):
                     captions[key] = row[f"caption_{i}"]
 
         captions_ds = SingleModalityDataset(
-            list(captions.keys()), captions, lambda some_key: some_key.rsplit("_", 1)[0]
+            list(captions.keys()), captions, cls.strip_caption_index
         )
         embeddings_ds = EmbeddingDataset(file_names_idx, file_names)
         return cls(embeddings_ds, captions_ds)
+
+    @staticmethod
+    def strip_caption_index(some_key: str) -> str:
+        return some_key.rsplit("_", 1)[0]
 
 
 class ClothoEmbeddingsDatamodule(ThreeSplitsDataModule):

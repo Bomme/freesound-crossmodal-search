@@ -15,7 +15,7 @@ class SingleModalityDataset(Dataset):
     ):
         self.items_idx = items_idx
         self.items = items
-        self.source_identifier_fn = source_identifier_fn or (lambda x: x)
+        self.source_identifier_fn = source_identifier_fn or identity
 
     def get_source_identifier(self, key):
         assert key in self.items, f"The key {key} is not present in the dataset"
@@ -77,3 +77,7 @@ class ThreeSplitsDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(self.test_dataset, self.batch_size, shuffle=False)
+
+
+def identity(x):
+    return x
