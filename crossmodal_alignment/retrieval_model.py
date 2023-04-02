@@ -33,6 +33,9 @@ class BiEncoder(pl.LightningModule):
 
         self.save_hyperparameters(ignore=["audio_encoder", "text_encoder"])
 
+        self.val_outputs = []
+        self.test_outputs = []
+
     def _step(
         self,
         audio_labels,
@@ -76,37 +79,41 @@ class BiEncoder(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         output = self._step(*batch)
         self.log("val_loss", output["loss"])
+        self.val_outputs.append(output)
         return output
 
     def test_step(self, batch, batch_idx):
         output = self._step(*batch)
 
         self.log("test_loss", output["loss"])
+        self.test_outputs.append(output)
         return output
 
-    def validation_epoch_end(self, outputs) -> None:
+    def on_validation_epoch_end(self):
         a_labels, a_embs, a_comparables = self._aggregate_outputs(
-            [output["audio_outputs"] for output in outputs]
+            [output["audio_outputs"] for output in self.val_outputs]
         )
         t_labels, t_embs, t_comparables = self._aggregate_outputs(
-            [output["text_outputs"] for output in outputs]
+            [output["text_outputs"] for output in self.val_outputs]
         )
 
         self.retrieval_metrics(
             t_embs, t_comparables, a_embs, a_comparables, self.val_metrics
         )
+        self.val_outputs.clear()
 
-    def test_epoch_end(self, outputs) -> None:
+    def on_test_epoch_end(self) -> None:
         a_labels, a_embs, a_comparables = self._aggregate_outputs(
-            [output["audio_outputs"] for output in outputs]
+            [output["audio_outputs"] for output in self.test_outputs]
         )
         t_labels, t_embs, t_comparables = self._aggregate_outputs(
-            [output["text_outputs"] for output in outputs]
+            [output["text_outputs"] for output in self.test_outputs]
         )
 
         self.retrieval_metrics(
             t_embs, t_comparables, a_embs, a_comparables, self.test_metrics
         )
+        self.test_outputs.clear()
 
     @staticmethod
     def _aggregate_outputs(outputs):
