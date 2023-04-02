@@ -169,11 +169,8 @@ class BiEncoder(pl.LightningModule):
             .unsqueeze(1)
             .repeat((1, ref_embs.shape[0]))
         )
-        targets = torch.empty(similarities.shape, dtype=torch.bool, device=self.device)
-
-        for i, q in enumerate(query_comparables):
-            for j, r in enumerate(ref_comparables):
-                targets[i, j] = q == r
+        targets = [[q == r for r in ref_comparables] for q in query_comparables]
+        targets = torch.as_tensor(targets, device=self.device)
 
         metrics_results = metric_collection(similarities, targets, query_indicators)
         for metric in metrics_results:
