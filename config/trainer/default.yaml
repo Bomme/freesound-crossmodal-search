@@ -1,0 +1,8 @@
+max_epochs: 100
+accelerator: auto
+callbacks:
+  - class_path: pytorch_lightning.callbacks.EarlyStopping
+    init_args:
+      patience: 5
+      monitor: val_loss
+      verbose: true     
