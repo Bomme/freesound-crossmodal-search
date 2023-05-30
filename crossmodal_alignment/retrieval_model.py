@@ -1,25 +1,21 @@
+from abc import abstractmethod
+from typing import Any
 import pytorch_lightning as pl
 import pytorch_lightning.utilities.distributed as pld
-import torch.distributed as dist
 import torch
-from torch import optim, nn
+import torch.distributed as dist
 from pytorch_metric_learning import losses
+from torch import nn, optim
 from torchmetrics import MetricCollection, RetrievalRecall
+from transformers import AutoProcessor, ClapModel, ClapProcessor
 
-from crossmodal_alignment.modules.encoder import (
-    MultiLayerPerceptron,
-    EmbeddingsAdapterAverage,
-)
+from crossmodal_alignment.modules.encoder import MultiLayerPerceptron
 from crossmodal_alignment.modules.text import TorchTextWordEmbedding
 
 
-class BiEncoder(pl.LightningModule):
-    def __init__(self, audio_encoder, text_encoder):
-        super().__init__()
-        self.audio_encoder = audio_encoder
-        self.text_encoder = text_encoder
-        self.loss = losses.NTXentLoss()
-
+class TextAudioModel(pl.LightningModule):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
         metrics = MetricCollection(
             {
                 "Recall/Recall@01": RetrievalRecall(k=1),
@@ -30,6 +26,22 @@ class BiEncoder(pl.LightningModule):
         self.train_metrics = metrics.clone(postfix="/Train")
         self.val_metrics = metrics.clone(postfix="/Val")
         self.test_metrics = metrics.clone(postfix="/Test")
+
+    @abstractmethod
+    def get_audio_embeddings(self, audio):
+        """Compute the embeddings for the given audio input."""
+
+    @abstractmethod
+    def get_text_embeddings(self, text):
+        """Compute the embeddings for the given text input."""
+
+
+class BiEncoder(TextAudioModel):
+    def __init__(self, audio_encoder, text_encoder):
+        super().__init__()
+        self.audio_encoder = audio_encoder
+        self.text_encoder = text_encoder
+        self.loss = losses.NTXentLoss()
 
         self.save_hyperparameters(ignore=["audio_encoder", "text_encoder"])
 
@@ -184,6 +196,12 @@ class BiEncoder(pl.LightningModule):
         optimizer = optim.Adam(self.parameters(), lr=1e-4)
         return optimizer
 
+    def get_audio_embeddings(self, audio):
+        return self.audio_encoder(audio)
+
+    def get_text_embeddings(self, text):
+        return self.text_encoder(text)
+
 
 class AudioEmbeddingTorchText(BiEncoder):
     def __init__(
@@ -199,3 +217,28 @@ class AudioEmbeddingTorchText(BiEncoder):
             text_emb, MultiLayerPerceptron(text_emb.dim, target_dim, target_dim)
         )
         super().__init__(audio_emb_adapter, text_encoder)
+
+
+class TransformersModel(TextAudioModel):
+    def __init__(self, ckpt="laion/clap-htsat-fused") -> None:
+        super().__init__()
+        self.model = ClapModel.from_pretrained(ckpt)
+        self.processor: ClapProcessor = AutoProcessor.from_pretrained(ckpt)
+        self.sampling_rate = self.processor.feature_extractor.sampling_rate
+
+    def forward(self, audio, text):
+        inputs = self.processor(
+            text=text, audios=audio, return_tensors="pt", padding=True
+        )
+        outputs = self.model(**inputs)
+        return outputs.logits_per_audio
+
+    def get_audio_embedding(self, audio):
+        inputs = self.processor(audios=audio, return_tensors="pt")
+        audio_features = self.model.get_audio_features(**inputs)
+        return audio_features.squeeze()
+
+    def get_text_embedding(self, text):
+        inputs = self.processor(text=text, return_tensors="pt")
+        text_features = self.model.get_text_features(**inputs)
+        return text_features.squeeze()
