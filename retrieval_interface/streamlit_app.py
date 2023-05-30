@@ -6,24 +6,42 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 import torch
+import torchaudio
+from tqdm import tqdm
 
-from crossmodal_alignment.retrieval_model import AudioEmbeddingTorchText
+from crossmodal_alignment.retrieval_model import (
+    AudioEmbeddingTorchText,
+    TransformersModel,
+)
 
 
 @st.cache_resource
-def load_model(ckpt: str | os.PathLike):
-    model = AudioEmbeddingTorchText.load_from_checkpoint(ckpt)
+def load_model(ckpt: str | os.PathLike | None = None):
+    if ckpt is None:
+        model = TransformersModel()
+    else:
+        model = AudioEmbeddingTorchText.load_from_checkpoint(ckpt)
     model.train(False)
     return model
 
 
+def load_audio_input(audio_path: Path, sampling_rate: int):
+    if audio_path.suffix == ".npy":
+        return torch.from_numpy(np.load(audio_path))
+    else:
+        audio, sr = torchaudio.load(audio_path)
+        audio = torchaudio.functional.resample(audio, sr, sampling_rate)
+        return audio.mean(0)
+
+
 @st.cache_data
-def build_audio_index(root_dir: Path, _audio_encoder):
+def build_audio_index(root_dir: Path, _audio_encoder, pattern: str = "*.wav", **kwargs):
     file_names = []
     audios = []
-    for file in root_dir.rglob("*.npy"):
-        input_audio = torch.from_numpy(np.load(file))
-        embedded_audio = _audio_encoder(input_audio)
+    for file in tqdm(root_dir.rglob(pattern)):
+        with torch.inference_mode():
+            input_audio = load_audio_input(file, **kwargs)
+            embedded_audio = _audio_encoder(input_audio)
         audios.append(embedded_audio)
         file_names.append(file.name)
     return torch.stack(audios), file_names
@@ -60,7 +78,8 @@ def main(model, name_to_result_mapping):
 
     if query:
         st.header(f"Top {k} results")
-        embedded_query = model.text_encoder(query)
+        with torch.inference_mode():
+            embedded_query = model.get_text_embedding(query)
         similarities = torch.cosine_similarity(embedded_query, ref_audios)
         matches, match_indices = torch.topk(similarities, k=10)
         for match, idx in zip(matches, match_indices.tolist()):
@@ -88,7 +107,7 @@ parser.add_argument(
     type=Path,
 )
 parser.add_argument(
-    "ckpt_path", help="Path to a checkpoint to load the model from", type=Path
+    "--ckpt_path", help="Path to a checkpoint to load the model from", type=Path
 )
 try:
     args = parser.parse_args()
@@ -97,7 +116,9 @@ except:
     raise
 
 model = load_model(args.ckpt_path)
-ref_audios, ref_names = build_audio_index(args.data_dir, model.audio_encoder)
+ref_audios, ref_names = build_audio_index(
+    args.data_dir, model.get_audio_embedding, sampling_rate=model.sampling_rate
+)
 name_to_result_mapping = partial(
     map_file_path, source_root=args.data_dir, target_root=args.audio_dir, new_ext=".wav"
 )
